@@ -1,1 +1,1 @@
-# bone_decontamination
+Here you can find R Notebooks used for the manuscript "Cleaning the Dead: Optimized decontamination enhances palaeoproteomic analyses of a Pleistocene hominin tooth from Khudji, Tajikistan" by Fagernäs et al. There are separate scripts for the method comparison using an Equus bone, and the analysis of the hominin. Have fun!
