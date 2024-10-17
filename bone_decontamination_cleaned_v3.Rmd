@@ -1,0 +1,1431 @@
+---
+title: "Archaeological bone decontamination"
+author: "Zandra Fagernäs"
+date: "17.10.2024"
+---
+
+This R Notebook contains code for the bone decontamination portion of "Cleaning the Dead: Optimized decontamination enhances palaeoproteomic analyses of a Pleistocene hominin tooth from Khudji, Tajikistan" by Fagernäs et al.
+
+The metadata file is in supplementary information of the publication, called supplementary_data_1.txt. All analyses are based on MaxQuant output, and can be found on the ProteomeXchange Consortium via the PRIDE partner repository with the dataset identifier PXD050393. To run the code, you need to download the files from PRIDE, and change the paths in the code blocks to point to the data files. Note that  the figures may have been manually edited for improved visuals after exporting. Not all figures that are coded for here are included in the manuscript (comments in the code will show which ones are), as I like to visualize data just to understand it.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+library(MetBrewer)
+library(janitor)
+library(ggpubr)
+library(Biostrings)
+library(car)
+library(tidyverse)
+
+meta <- read_delim("/path_to_wd/supplemetary_data_1.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() 
+```
+
+## Protein number
+
+```{r}
+# Load dataset
+proteins <- read_delim("/path_to_wd/proteinGroups.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  filter(str_detect(protein_i_ds, "HORSE|CANLF")) %>%
+  select(protein_i_ds, starts_with("razor_unique_peptides_")) 
+
+# Total number of proteins and peptides
+protein_total <- proteins %>%
+  pivot_longer(names_to = "stagetip", values_to = "peptides", 2:23) %>%
+  mutate(stagetip = gsub('razor_unique_peptides_', '', stagetip)) %>%
+  filter(peptides > 0) %>%
+  group_by(stagetip) %>%
+  summarize(protein_count = n(), 
+            peptide_count = sum(peptides))
+
+# Add metadata
+protein_total$stagetip <- toupper(protein_total$stagetip)
+protein_total <- left_join(protein_total, meta)
+
+# Summarize
+protein_summary <- protein_total %>%
+  group_by(method) %>%
+  summarize(mean_protein = mean(protein_count), sd_protein = sd(protein_count), 
+            mean_peptide = mean(peptide_count), sd_peptide = sd(peptide_count))
+
+# Assign if proteins are dog or horse, remove ones assigned to both
+proteins <- proteins %>%
+  mutate(dog = str_detect(protein_i_ds, "CANLF")) %>%
+  mutate(horse = str_detect(protein_i_ds, "HORSE"))  %>%
+  mutate(species = if_else(dog == TRUE & horse == FALSE, "dog", 
+                           if_else(horse == TRUE & dog == FALSE, "horse", "both"))) %>%
+  select(-horse, -dog) %>%
+  filter(!species == "both")
+
+# Protein count
+protein_count <- proteins %>%
+  select(species, protein_i_ds, 2:24) %>%
+  pivot_longer(names_to = "stagetip", values_to = "peptides", 3:24) %>%
+  mutate(stagetip = gsub('razor_unique_peptides_', '', stagetip)) %>%
+  filter(peptides > 0) %>%
+  group_by(stagetip, species) %>%
+  summarize(protein_count = n())
+
+# Add metadata
+protein_count$stagetip <- toupper(protein_count$stagetip)
+protein_count <- left_join(protein_count, meta)
+
+# Protein mean count
+protein_count_mean <- protein_count %>%
+  group_by(method, species) %>%
+  summarize(mean_protein = mean(protein_count), sd_protein = sd(protein_count))
+
+# Ratio dog:horse protein
+protein_ratio <- protein_count %>%
+  pivot_wider(values_from = "protein_count", names_from = "species") %>%
+  mutate(ratio = dog/horse)
+protein_ratio_summary <- protein_ratio %>%
+  group_by(method) %>%
+  summarize(mean_ratio = mean(ratio), sd_ratio = sd(ratio))
+
+# ANOVA
+aov_test <- aov(ratio ~ method, data = protein_ratio)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Post-hoc test
+TukeyHSD(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(ratio ~ method, data = protein_ratio)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+protein_summary <- protein_count %>%
+  group_by(species, method) %>%
+  summarize(mean_number = mean(protein_count), sd_number = sd(protein_count))
+
+# Change labels
+protein_count_mean <- protein_count_mean %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+protein_count_mean <- protein_count_mean %>%
+    mutate(species = gsub('dog', 'Dog', species)) %>%
+    mutate(species = gsub('horse', 'Horse', species))
+
+# Reorder for plotting
+protein_count_mean$method <- factor(protein_count_mean$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (produces Figure 3A)
+protein_count_fig <- ggplot(protein_count_mean, aes(x=method, y=mean_protein, fill=species)) + 
+  geom_bar(stat="identity", position ="dodge") +
+  geom_errorbar(aes(ymin=mean_protein-sd_protein, ymax=mean_protein+sd_protein), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Cassatt2", 3), name="Species") +
+  xlab("") +
+  ylab("Protein number") +
+  theme_bw()
+```
+
+## PSM number
+
+```{r}
+# Load dataset
+peptide <- read_delim("/path_to_wd/evidence.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  #filter(str_detect(proteins, "HORSE|CANLF")) %>%
+  filter(intensity > 0) %>%
+  select(proteins, experiment, intensity)
+
+# Assign if proteins are dog or horse, remove ones assigned to both
+peptide <- peptide %>%
+  mutate(dog = str_detect(proteins, "CANLF")) %>%
+  mutate(horse = str_detect(proteins, "HORSE")) %>%
+  mutate(species = if_else(dog == TRUE & horse == FALSE, "dog", 
+                           if_else(horse == TRUE & dog == FALSE, "horse", "both"))) %>%
+  select(-horse, -dog) %>%
+  filter(!species == "both")
+
+# Peptide count
+peptide_count <- peptide %>%
+  group_by(experiment, species) %>%
+  summarize(peptide_count = n())
+
+# Ratio dog:horse peptide
+peptide_ratio <- peptide_count %>%
+  pivot_wider(values_from = "peptide_count", names_from = "species") %>%
+  mutate(ratio = dog/horse)
+peptide_ratio <- left_join(peptide_ratio, meta, by=c("experiment"="stagetip"))
+
+# Summary
+ratio_summary <- peptide_ratio %>%
+  group_by(method) %>%
+  summarize(mean_ratio = mean(ratio), sd_ratio = sd(ratio))
+
+# ANOVA
+aov_test <- aov(ratio ~ method, data = peptide_ratio)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Post-hoc test
+TukeyHSD(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(ratio ~ method, data = peptide_ratio_stats)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Add metadata
+peptide_count <- left_join(peptide_count, meta, by=c("experiment"="stagetip"))
+
+# Peptide mean count
+peptide_count_mean <- peptide_count %>%
+  group_by(method, species) %>%
+  summarize(mean_peptide = mean(peptide_count), sd_peptide = sd(peptide_count))
+
+# Change labels
+peptide_count_mean <- peptide_count_mean %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+peptide_count_mean <- peptide_count_mean %>%
+    mutate(species = gsub('dog', 'Dog', species)) %>%
+    mutate(species = gsub('horse', 'Horse', species))
+
+# Reorder for plotting
+peptide_count_mean$method <- factor(peptide_count_mean$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (produces Figure 3B)
+peptide_fig <- ggplot(peptide_count_mean, aes(x=method, y=mean_peptide, fill=species)) + 
+  geom_bar(stat="identity", position ="dodge") +
+  geom_errorbar(aes(ymin=mean_peptide-sd_peptide, ymax=mean_peptide+sd_peptide), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Cassatt2", 3), name="Species") +
+  xlab("") +
+  ylab("Peptide number") +
+  theme_bw()
+```
+
+## Human keratins
+
+```{r}
+# Load contaminant list
+### You need to make this one yourself, but it's just going through the contaminants manually and noting down what they are
+cont <- read_delim("/path_to_wd/identified_contaminants.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(str_detect(protein_id, "HUMAN"))
+cont_list <- paste(cont$id, collapse = "|")
+
+# Load dataset
+human <- read_delim("/path_to_wd/proteinGroups.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  filter(str_detect(protein_i_ds, cont_list)) %>%
+  filter(!str_detect(protein_i_ds, "CANLF|HORSE")) %>%
+  select(protein_i_ds, starts_with("razor_unique_peptides_")) 
+
+# Total number of proteins and peptides
+human_total <- human %>%
+  pivot_longer(names_to = "stagetip", values_to = "peptides", 2:23) %>%
+  mutate(stagetip = gsub('razor_unique_peptides_', '', stagetip)) %>%
+  filter(peptides > 0) %>%
+  group_by(stagetip) %>%
+  summarize(protein_count = n(), 
+            peptide_count = sum(peptides))
+
+# Add metadata
+human_total$stagetip <- toupper(human_total$stagetip)
+human_total <- left_join(human_total, meta)
+
+# Summarize
+human_summary <- human_total %>%
+  group_by(method) %>%
+  summarize(mean_protein = mean(protein_count), sd_protein = sd(protein_count), 
+            mean_peptide = mean(peptide_count), sd_peptide = sd(peptide_count))
+
+# Change labels
+human_summary <- human_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+human_summary$method <- factor(human_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (not included in the manuscript)
+human_proteins <- ggplot(human_summary, aes(x=method, y=mean_protein, fill=method)) + 
+  geom_bar(stat="identity", position ="dodge") +
+  geom_errorbar(aes(ymin=mean_protein-sd_protein, ymax=mean_protein+sd_protein), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Cassatt2", 7), guide="none") +
+  xlab("") +
+  ylab("Protein number") +
+  theme_bw()
+
+human_peptides <- ggplot(human_summary, aes(x=method, y=mean_peptide, fill=method)) + 
+  geom_bar(stat="identity", position ="dodge") +
+  geom_errorbar(aes(ymin=mean_peptide-sd_peptide, ymax=mean_peptide+sd_peptide), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Cassatt2", 7), guide="none") +
+  xlab("") +
+  ylab("Peptide number") +
+  theme_bw()
+```
+
+### Lactotransferrin
+
+```{r}
+# Peptide count
+lt <- read_delim("/path_to_wd/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(str_detect(fasta_headers, "Lactotransferrin")) %>%
+  select(starts_with("razor_unique_peptides_")) %>%
+  pivot_longer(values_to="peptides", names_to="stagetip", 1:22) %>%
+  mutate(stagetip = gsub('razor_unique_peptides_', '', stagetip))
+
+# Add metadata
+lt$stagetip <- toupper(lt$stagetip)
+lt <- left_join(lt, meta) %>%
+  filter(!sample == "blank")
+
+# Summarize
+lt_summary <- lt %>%
+  group_by(method) %>%
+  summarize(mean_peptides = mean(peptides), sd_peptides = sd(peptides))
+
+# Change labels
+lt_summary <- lt_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+lt_summary$method <- factor(lt_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot
+lacto_peptides <- ggplot(lt_summary, aes(x=method, y=mean_peptides)) + 
+  geom_bar(stat="identity", position ="dodge", fill= "#b695bc") +
+  geom_errorbar(aes(ymin=mean_peptides-sd_peptides, ymax=mean_peptides+sd_peptides), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Peptides") +
+  theme_bw()
+
+# Sequence coverage
+lt <- read_delim("/path_to_wd/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(str_detect(fasta_headers, "Lactotransferrin")) %>%
+  select(starts_with("sequence_coverage_")) %>%
+  select(-sequence_coverage_percent) %>%
+  pivot_longer(values_to="coverage", names_to="stagetip", 1:22) %>%
+  mutate(stagetip = gsub('sequence_coverage_', '', stagetip)) %>%
+  mutate(stagetip = gsub('_percent', '', stagetip))
+
+# Add metadata
+lt$stagetip <- toupper(lt$stagetip)
+lt <- left_join(lt, meta) %>%
+  filter(!sample == "blank")
+
+# Summarize
+lt_summary <- lt %>%
+  group_by(method) %>%
+  summarize(mean_coverage = mean(coverage), sd_coverage = sd(coverage))
+
+# Change labels
+lt_summary <- lt_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+lt_summary$method <- factor(lt_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (Figure 4A-B)
+lacto_coverage <- ggplot(lt_summary, aes(x=method, y=mean_coverage)) + 
+  geom_bar(stat="identity", position ="dodge", fill= "#b695bc") +
+  geom_errorbar(aes(ymin=mean_coverage-sd_coverage, ymax=mean_coverage+sd_coverage), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Sequence coverage (%)") +
+  theme_bw()
+```
+
+## Protein coverage
+
+Change protein IDs according to what you want to look at.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load peptide files
+peptide <- read_delim("/path_to_wd/peptides.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(str_detect(proteins, "A0A9L0TS53|F6WD70")) %>%
+  dplyr::select(starts_with("lfq_intensity_p"), start_position, end_position)
+
+# Expand numbers between start and end to get a dataframe of all covered positions
+peptide <- peptide %>%
+  mutate(covered = map2(start_position, end_position, seq, by=1))  
+pos_list <- peptide %>% dplyr::select(covered) %>%
+  mutate(covered = map(covered, ~as_data_frame(t(.x)))) %>% unnest()
+peptide <- cbind(peptide, pos_list)
+
+# Gather to long form
+peptide <- peptide %>%
+  gather("remove", "position", 26:50) %>% 
+  dplyr::select(-start_position, -end_position, -covered, -remove) %>%
+  filter(position > 0) %>%
+  gather("stagetip", "intensity", 1:22) %>%
+  filter(intensity > 0) %>%
+  separate(stagetip, c("remove", "remove2", "stagetip"), sep="_") %>%
+  select(-remove, -remove2)
+
+# Sum intensity per position
+coverage_summary <- peptide %>%
+  group_by(position, stagetip) %>%
+  summarize(total_intensity = sum(intensity))
+
+# Add metadata, remove blank
+coverage_summary$stagetip <- toupper(coverage_summary$stagetip)
+coverage_summary <- left_join(coverage_summary, meta) %>%
+  filter(!sample == "blank")
+
+## Count number of covered amino acids
+coverage_count <- coverage_summary %>%
+  group_by(method, sample) %>%
+  summarize(covered_aa = n())
+
+# Summarize even more
+coverage_count_summary <- coverage_count %>%
+  group_by(method) %>%
+  summarize(mean_aa = mean(covered_aa),
+            sd_aa = sd(covered_aa))
+
+# ANOVA
+aov_test <- aov(covered_aa ~ method, data = coverage_count)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Post-hoc test
+TukeyHSD(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(covered_aa ~ method, data = coverage_count)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# log2 intensity
+coverage_summary$intensity_log2 <- log2(coverage_summary$total_intensity)
+
+# Average by method
+coverage_summary <- coverage_summary %>%
+  group_by(method, position) %>%
+  summarize(mean_intensity = mean(intensity_log2))
+
+# Change labels
+coverage_summary <- coverage_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+coverage_summary$method <- factor(coverage_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (leads to Figure 5)
+ggplot(coverage_summary, aes(x=position, y=method)) +
+  geom_raster(aes(fill=mean_intensity)) +
+  scale_fill_gradient(low="#e9eaf2ff", high="#574571", name="Mean intensity (log2)",
+                      limits=c(15, 35)) +
+  scale_y_discrete(limits = rev) +
+  ylab("") +
+  xlab("Amino acid position") +
+  theme_bw()
+```
+
+## PTMs
+
+```{r}
+# Load evidence file and clean, filter for horse-only peptides
+evidence <- read_delim("/path_to_wd/evidence.txt", delim = "\t") %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  filter(intensity > 0) %>%
+  filter(!str_detect(proteins, "CANLF")) %>%
+  filter(str_detect(proteins, "HORSE")) %>%
+  filter(!str_detect(proteins, "CON__P13647|F6Z8D6|P08730-1|P02538|F6Q1M4|A0A3Q2KP58|P19013|F6S8W6|P50446|F7D5X8|Q5XQN5"))
+```
+
+### Oxidation of M
+
+```{r}
+# Calculate 
+oxidation_m <- evidence %>%
+  mutate(count_m = str_count(sequence, "M"),
+         count_oxi_m = str_count(modified_sequence, "M\\("),
+         fraction_oxi_m = count_oxi_m / count_m) %>%
+  filter(count_m > 0) %>%
+  group_by(experiment) %>%
+  summarise(mean_oxi_m = weighted.mean(fraction_oxi_m, intensity, na.rm=TRUE),
+            number_peptides = n())
+
+# Add metadata
+oxidation_m <- left_join(oxidation_m, meta, by=c("experiment" = "stagetip"))
+
+# ANOVA
+aov_test <- aov(mean_oxi_m ~ method, data = oxidation_m)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Post-hoc test
+TukeyHSD(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_oxi_m ~ method, data = oxidation_m_stats)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+oxi_summary <- oxidation_m %>%
+  group_by(method) %>%
+  summarize(mean_oxi = mean(mean_oxi_m), sd_oxi = sd(mean_oxi_m),
+            mean_peptides = mean(number_peptides))
+
+# Change labels
+oxi_summary <- oxi_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+oxi_summary$method <- factor(oxi_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (not included in manuscript)
+oxi_plot <- ggplot(oxi_summary, aes(x=method, y=mean_oxi)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_oxi-sd_oxi, ymax=mean_oxi+sd_oxi), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Oxidation M") +
+  theme_bw()
+```
+
+### Carbamidomethylation of C
+
+```{r}
+# Calculate 
+carb <- evidence %>%
+  mutate(count_c = str_count(sequence, "C"),
+         count_carb = str_count(modified_sequence, "C\\("),
+         fraction_carb = count_carb / count_c) %>%
+  filter(count_c > 0) %>%
+  group_by(experiment) %>%
+  summarise(mean_carb = weighted.mean(fraction_carb, intensity, na.rm=TRUE),
+            number_peptides = n())
+
+# Add metadata
+carb <- left_join(carb, meta, by=c("experiment" = "stagetip"))
+
+# ANOVA
+aov_test <- aov(mean_carb ~ method, data = carb)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_carb ~ method, data = carb)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+carb_summary <- carb %>%
+  group_by(method) %>%
+  dplyr::summarize(mean_carbo = mean(mean_carb), sd_carb = sd(mean_carb))
+
+# Change labels
+carb_summary <- carb_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+carb_summary$method <- factor(carb_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (not included in manuscript)
+carb_plot <- ggplot(carb_summary, aes(x=method, y=mean_carbo)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_carbo-sd_carb, ymax=mean_carbo+sd_carb), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Carbamidomethylation C") +
+  theme_bw()
+```
+
+### Pyro-Glu
+
+```{r}
+# Calculate 
+pyro <- evidence %>%
+  mutate(count_e = str_count(sequence, "E"),
+         count_pyro = str_count(modified_sequence, "\\(Glu\\-"),
+         fraction_pyro = count_pyro / count_e) %>%
+  filter(count_e > 0) %>%
+  group_by(experiment) %>%
+  summarise(mean_pyro = weighted.mean(fraction_pyro, intensity, na.rm=TRUE),
+            number_peptides = n())
+
+# Add metadata
+pyro <- left_join(pyro, meta, by=c("experiment" = "stagetip"))
+
+# ANOVA
+aov_test <- aov(mean_pyro ~ method, data = pyro)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_pyro ~ method, data = pyro)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+```
+
+### Hydroxyproline
+
+```{r}
+# Calculate 
+hydro <- evidence %>%
+  mutate(count_p = str_count(sequence, "P"),
+         count_hydro = str_count(modified_sequence, "P\\("),
+         fraction_hydro = count_hydro / count_p) %>%
+  filter(count_p > 0) %>%
+  group_by(experiment) %>%
+  summarise(mean_hydro = weighted.mean(fraction_hydro, intensity, na.rm=TRUE),
+            number_peptides = n())
+
+# Add metadata
+hydro <- left_join(hydro, meta, by=c("experiment" = "stagetip"))
+
+# ANOVA
+aov_test <- aov(mean_hydro ~ method, data = hydro)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_hydro ~ method, data = hydro)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+hydro_summary <- hydro %>%
+  group_by(method) %>%
+  dplyr::summarize(mean_hydrox = mean(mean_hydro), sd_hydro = sd(mean_hydro))
+
+# Change labels
+hydro_summary <- hydro_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+hydro_summary$method <- factor(hydro_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (Figure S2C)
+hydro_plot <- ggplot(hydro_summary, aes(x=method, y=mean_hydrox)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_hydrox-sd_hydro, ymax=mean_hydrox+sd_hydro), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Hydroxyproline") +
+  theme_bw()
+```
+
+### Oxidation (WH)
+
+Note that UV-induced modifications are from a different MaxQuant run! It's also in the PRIDE repository.
+
+```{r}
+# Load evidence file and clean, filter for horse-only peptides
+evidence_uv <- read_delim("/path_to_wd/evidence.txt", delim = "\t") %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  filter(intensity > 0) %>%
+  filter(str_detect(proteins, "HORSE")) %>%
+  filter(!str_detect(proteins, "CON__P13647|F6Z8D6|P08730-1|P02538|F6Q1M4|A0A3Q2KP58|P19013|F6S8W6|P50446|F7D5X8|Q5XQN5"))
+
+# Calculate 
+wh <- evidence_uv %>%
+  mutate(count_wh = str_count(sequence, "W|H"),
+         count_oxiwh = str_count(modified_sequence, "\\(WH\\)"),
+         fraction_oxiwh = count_oxiwh / count_wh) %>%
+  filter(count_wh > 0) %>%
+  group_by(experiment) %>%
+  summarise(mean_oxiwh = weighted.mean(fraction_oxiwh, intensity, na.rm=TRUE),
+            number_peptides = n())
+
+# Add metadata
+wh <- left_join(wh, meta, by=c("experiment" = "stagetip"))
+
+# ANOVA
+aov_test <- aov(mean_oxiwh ~ method, data = wh)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_oxiwh ~ method, data = wh)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+wh_summary <- wh %>%
+  group_by(method) %>%
+  summarize(mean_wh = mean(mean_oxiwh), sd_wh = sd(mean_oxiwh),
+            mean_peptides = mean(number_peptides))
+
+# Change labels
+wh_summary <- wh_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+wh_summary$method <- factor(wh_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (Figure S2B)
+wh_plot1 <- ggplot(wh_summary, aes(x=method, y=mean_wh)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_wh-sd_wh, ymax=mean_wh+sd_wh), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Oxidation WH") +
+  theme_bw()
+```
+
+### Dioxidation (WH)
+
+```{r}
+# Calculate 
+wh <- evidence_uv %>%
+  mutate(count_wh = str_count(sequence, "W|H"),
+         count_oxiwh = str_count(modified_sequence, "\\(Di-oxi"),
+         fraction_oxiwh = count_oxiwh / count_wh) %>%
+  filter(count_wh > 0) %>%
+  group_by(experiment) %>%
+  summarise(mean_oxiwh = weighted.mean(fraction_oxiwh, intensity, na.rm=TRUE),
+            number_peptides = n())
+
+# Add metadata
+wh <- left_join(wh, meta, by=c("experiment" = "stagetip"))
+
+# ANOVA
+aov_test <- aov(mean_oxiwh ~ method, data = wh)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_oxiwh ~ method, data = wh)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+wh_summary <- wh %>%
+  group_by(method) %>%
+  summarize(mean_wh = mean(mean_oxiwh), sd_wh = sd(mean_oxiwh),
+            mean_peptides = mean(number_peptides))
+
+# Change labels
+wh_summary <- wh_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+wh_summary$method <- factor(wh_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (Figure S2D)
+wh_plot2 <- ggplot(wh_summary, aes(x=method, y=mean_wh)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_wh-sd_wh, ymax=mean_wh+sd_wh), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Dioxidation WH") +
+  theme_bw()
+```
+
+## Deamidation
+
+Here, you first need to calculate deamidation from the evidence file using the script published in:
+
+Mackie, M., Rüther, P., Samodova, D., Di Gianvincenzo, F., Granzotto, C., Lyon, D., Peggie, D. A., Howard, H., Harrison, L., Jensen, L. J., Olsen, J. V., & Cappellini, E. (2018). Palaeoproteomic Profiling of Conservation Layers on a 14th Century Italian Wall Painting. Angewandte Chemie, 57(25), 7369–7374.
+
+```{r}
+# Load evidence file and clean, filter for horse-only peptides
+evidence <- read_delim("/path_to_wd/evidence.txt", delim = "\t") %>%
+  filter(!Reverse %in% c("+")) %>%
+  filter(Intensity > 0) %>%
+  filter(!str_detect(Proteins, "CANLF")) %>%
+  filter(str_detect(Proteins, "HORSE")) %>%
+  filter(!str_detect(Proteins, "CON__P13647|F6Z8D6|P08730-1|P02538|F6Q1M4|A0A3Q2KP58|P19013|F6S8W6|P50446|F7D5X8|Q5XQN5"))
+
+# Load deamidation output
+deam <- read.csv("/path_to_wd/deamidation_decont.txt", sep="") %>%
+  clean_names()
+
+# Extract stagetip number
+deam <- deam %>%
+  separate(raw_file, c("remove", "stagetip"), sep="DDA_") %>%
+  separate(stagetip, c("stagetip", "remove1"), sep="_") %>%
+  select(-remove, -remove1)
+
+# Add metadata
+deam <- left_join(deam, meta)
+
+# Separate into N and Q for stats
+deam_n <- deam %>% filter(n_q == "N")
+deam_q <- deam %>% filter(n_q == "Q")
+
+### Stats N
+
+# ANOVA
+aov_test <- aov(mean ~ method, data = deam_n)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean ~ method, data = deam_n)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+### Stats Q
+
+# ANOVA
+aov_test <- aov(mean ~ method, data = deam_q)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean ~ method, data = deam_q)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+### Plotting
+
+# Summarize
+deam_summary <- deam %>%
+  group_by(method, n_q) %>%
+  dplyr::summarize(mean_deam = mean(mean), sd_deam = sd(mean))
+
+# Change labels
+deam_summary <- deam_summary %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+deam_summary$method <- factor(deam_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (Figure S2E)
+deam_plot <- ggplot(deam_summary, aes(x=method, y=mean_deam)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_deam-sd_deam, ymax=mean_deam+sd_deam), 
+                width=0.2, position=position_dodge(0.9)) +
+  facet_wrap(~n_q) +
+  xlab("") +
+  ylab("Deamidation") +
+  theme_bw()
+```
+
+## Peptide length 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load evidence file and clean
+evidence <- read_delim("/path_to_wd/evidence.txt", delim = "\t") %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  filter(intensity > 0) %>%
+  filter(!str_detect(proteins, "CANLF")) %>%
+  filter(str_detect(proteins, "HORSE")) %>%
+  filter(!str_detect(proteins, "CON__P13647|F6Z8D6|P08730-1|P02538|F6Q1M4|A0A3Q2KP58|P19013|F6S8W6|P50446|F7D5X8|Q5XQN5"))
+
+# Add metadata
+evidence <- left_join(evidence, meta, by=c("experiment"="stagetip"))
+
+# Summarize
+length_summary <- evidence %>%
+  group_by(experiment, method) %>%
+  dplyr::summarise(mean_length = weighted.mean(x=length, w=intensity, na.rm=TRUE))
+
+# ANOVA
+aov_test <- aov(mean_length ~ method, data = length_summary)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Post-hoc test
+TukeyHSD(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(mean_length ~ method, data = length_summary)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+length_plot <- length_summary %>%
+  group_by(method) %>%
+  summarize(mean_lengths = mean(mean_length), sd_lengths = sd(mean_length))
+
+# Change labels
+length_plot <- length_plot %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+length_plot$method <- factor(length_plot$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (leads to Figure S2A)
+length_fig <- ggplot(length_plot, aes(x=method, y=mean_lengths)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_lengths-sd_lengths, ymax=mean_lengths+sd_lengths), 
+                width=0.2, position=position_dodge(0.9)) +
+  ylim(0,27) +
+  xlab("") +
+  ylab("Peptide length") +
+  theme_bw()
+```
+
+## Horse protein intensity
+
+```{r}
+# Load dataset
+intensity <- read_delim("/path_to_wd/evidence.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  filter(!str_detect(proteins, "CANLF")) %>%
+  filter(str_detect(proteins, "HORSE")) %>%
+  filter(!str_detect(proteins, "CON__P13647|F6Z8D6|P08730-1|P02538|F6Q1M4|A0A3Q2KP58|P19013|F6S8W6|P50446|F7D5X8|Q5XQN5")) %>%
+  filter(intensity > 0) %>%
+  select(proteins, experiment, intensity)
+
+# Summarize
+intensity <- intensity %>%
+  group_by(experiment) %>%
+  summarize(total_intensity = sum(intensity))
+
+# Add metadata
+meta <- meta %>%
+  filter(weight_mg > 0) %>%
+  mutate(scale = max(weight_mg)/weight_mg)
+intensity <- left_join(intensity, meta, by=c("experiment"="stagetip")) %>%
+  filter(!sample == "blank")
+
+# Normalize by weight
+intensity$int_scaled <- intensity$total_intensity * intensity$scale
+
+# ANOVA
+aov_test <- aov(int_scaled ~ method, data = intensity)
+
+# Summary of the analysis
+summary(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(total_intensity ~ method, data = intensity_sum)
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals)
+
+# Summarize
+intensity_plot <- intensity %>%
+  group_by(method) %>%
+  summarize(mean_intensity = mean(int_scaled), sd_intensity = sd(int_scaled))
+
+# Change labels
+intensity_plot <- intensity_plot %>%
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('uv', 'UV', method))  %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
+
+# Reorder for plotting
+intensity_plot$method <- factor(intensity_plot$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Plot (not included in manuscript)
+intensity_fig <- ggplot(intensity_plot, aes(x=method, y=mean_intensity)) + 
+  geom_bar(stat="identity", position ="dodge", fill=met.brewer("Cassatt2", 1)) +
+  geom_errorbar(aes(ymin=mean_intensity-sd_intensity,
+                    ymax=mean_intensity+sd_intensity), 
+                width=0.2, position=position_dodge(0.9)) +
+  xlab("") +
+  ylab("Horse intensity") +
+  theme_bw()
+```
+
+## Overall PCA
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+gene <- read_delim("/path_to_wd/proteinGroups.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names() %>%
+  filter(!reverse %in% c("+")) %>%
+  #filter(str_detect(protein_i_ds, "CANLF|HORSE")) %>%
+  select(protein_i_ds, starts_with("lfq_")) %>%
+  select(-lfq_intensity_p0408)
+
+# Filter for presence in two samples 
+gene$presence <- rowSums(gene[2:22] != 0)
+gene <- gene %>%
+  filter(presence > 1) %>%
+  dplyr::select(-presence)
+
+# Transpose
+gene <- gene %>%
+  gather(stagetip, intensity, 2:22) %>%
+  group_by(stagetip, protein_i_ds) %>%
+  summarize(intensity = sum(intensity)) %>%
+  ungroup() %>%
+  spread(protein_i_ds, intensity) %>%
+  replace(is.na(.), 0)
+
+# Fix sample names
+gene <- gene %>%
+  mutate(stagetip = gsub('lfq_intensity_', '', stagetip))
+gene$stagetip <- toupper(gene$stagetip)
+
+# Pseudocount zero replacement
+gene[,2:ncol(gene)] <- gene[,2:ncol(gene)]+1
+
+# Log-transformation
+gene[,2:ncol(gene)] <- log2(gene[,2:ncol(gene)])
+
+# Create PCA object
+pca_all <- prcomp(gene[, 2:133], scale=FALSE)
+
+# Extract values
+pca_out <- as_tibble(pca_all$x)
+
+# Add metadata
+pca_out$stagetip <- gene$stagetip
+pca_out <- left_join(pca_out, meta)
+
+# Calculate percent explained per PC
+percentage <- round(pca_all$sdev^2 / sum(pca_all$sdev^2) * 100, 2)
+percentage <- paste(colnames(pca_out), "(", paste(
+  as.character(percentage), "%", ")", sep="") )
+
+# Get variables with biggest impact for PC1 and PC2
+pca_all$rotation[,1] %>% sort() %>% head(1)
+pca_all$rotation[,1] %>% sort(decreasing = TRUE) %>% head(1)
+pca_all$rotation[,2] %>% sort() %>% head(1)
+pca_all$rotation[,2] %>% sort(decreasing = TRUE) %>% head(1)
+
+# Get rownames for each protein
+which(rownames(pca_all$rotation) %in% 
+        c("tr|A0A8I3P9H6|A0A8I3P9H6_CANLF;tr|F6XL78|F6XL78_HORSE",
+          "tr|A0A8I3MKE4|A0A8I3MKE4_CANLF",
+          "tr|A0A8I3SBH3|A0A8I3SBH3_CANLF;sp|Q865C0|CAH6_CANLF",
+          "tr|A0A8I3P0I4|A0A8I3P0I4_CANLF"))
+
+# Create matrix of x (PC1) coordinates and y (PC2)
+l.x <- cbind(pca_all$rotation[,1][c(46,77,84,115)]) * 150
+l.y <- cbind(pca_all$rotation[,2][c(46,77,84,115)]) * 150
+
+# Plot (leads to Figure 2B)
+pca <- ggplot(data = pca_out, aes(x = PC1, y = PC2, color=method)) +
+  geom_point(size=6, stroke=1) +
+  xlab(percentage[1]) + 
+  ylab(percentage[2]) +
+  scale_color_manual(values=met.brewer(n=7, name="Cassatt2")) +
+  theme_minimal(base_size = 10) +
+  annotate("segment", x=0, xend=l.x, y=0, yend=l.y, colour="black", 
+           size=1, arrow=arrow()) + 
+  annotate("text", x=l.x, y=l.y, label=rownames(l.x), color="black")
+
+# Basic permanova with euclidean distance as metric
+library(vegan)
+pca_meta <- left_join(gene, meta)
+permanova <- adonis(gene[, 2:133] ~ method, 
+                    data=pca_meta,
+                    permutations=999,
+                    method="euclidean")
+permanova
+
+# Checking assumptions
+dist <- vegdist(gene[, 2:133])
+anova(betadisper(dist, pca_meta$method))
+```
+
+## Horse proteins
+
+From MaxQuant run without dog proteome, also included in PRIDE submission.
+
+```{r}
+# Load datasets and clean
+horse <- read_delim("/path_to_wd/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names()  %>% 
+  filter(!reverse %in% c("+"))  %>% 
+  filter(!str_detect(protein_i_ds, "CON_")) %>%
+  dplyr::select(fasta_headers, 33:35, 51:53)
+
+# Check number of proteins
+horse <- horse %>%
+  pivot_longer(names_to = "stagetip", values_to = "peptides", 2:7) %>%
+  mutate(stagetip = gsub('razor_unique_peptides_', '', stagetip)) %>%
+  filter(peptides > 0) %>%
+  group_by(stagetip) %>%
+  summarize(protein_count = n())
+
+# Add metadata
+horse$stagetip <- toupper(horse$stagetip)
+horse <- left_join(horse, meta)
+
+# Summarize
+horse_summary <- horse %>%
+  group_by(method) %>%
+  summarize(mean_protein = mean(protein_count), sd_protein = sd(protein_count))
+
+# Same for PSMs
+psms <- read_delim("/path_to_wd/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names()  %>% 
+  filter(!reverse %in% c("+")) %>%
+  filter(!str_detect(proteins, "CON_")) %>%
+  group_by(experiment) %>%
+  summarize(psm_nr = n())
+
+# Add metadata
+psms <- left_join(psms, meta, by=c("experiment" = "stagetip")) %>%
+  filter(method %in% c("no_cleaning", "no_contamination"))
+
+# Summarize
+psm_summary <- psms %>%
+  group_by(method) %>%
+  summarize(mean_psm = mean(psm_nr), sd_psm = sd(psm_nr))
+```
+
+## Horse PCA
+
+From MaxQuant run without dog proteome, also included in PRIDE submission.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE}
+# Load datasets and clean
+gene_horse <- read_delim("/path_to_wd/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  clean_names()  %>% 
+  filter(!reverse %in% c("+"))  %>% 
+  filter(str_detect(fasta_headers, "HORSE")) %>%
+  filter(!str_detect(fasta_headers, "Keratin")) %>%
+  dplyr::select(fasta_headers, 130:132, 148:150)
+
+# Extract protein names
+gene_horse <- gene_horse %>%
+  separate(fasta_headers, c("protein", "remove"), " ") %>%
+  dplyr::select(-remove)
+
+# Filter for presence in two samples 
+gene_horse$presence <- rowSums(gene_horse[2:7] != 0)
+gene_horse <- gene_horse %>%
+  filter(presence > 1) %>%
+  dplyr::select(-presence)
+
+# Transpose
+gene_horse <- gene_horse %>%
+  gather(stagetip, intensity, 2:7) %>%
+  group_by(stagetip, protein) %>%
+  summarize(intensity = sum(intensity)) %>%
+  ungroup() %>%
+  spread(protein, intensity) %>%
+  replace(is.na(.), 0)
+
+# Fix sample names
+gene_horse <- gene_horse %>%
+  mutate(stagetip = gsub('lfq_intensity_', '', stagetip))
+gene_horse$stagetip <- toupper(gene_horse$stagetip)
+
+# Pseudocount zero replacement
+gene_horse[,2:ncol(gene_horse)] <- gene_horse[,2:ncol(gene_horse)]+1
+
+# Log-transformation
+gene_horse[,2:ncol(gene_horse)] <- log2(gene_horse[,2:ncol(gene_horse)])
+
+# Create PCA object
+pca_all <- prcomp(gene_horse[, 2:36], scale=FALSE)
+
+# Extract values
+pca_out <- as_tibble(pca_all$x)
+
+# Add metadata
+pca_out$stagetip <- gene_horse$stagetip
+pca_out <- left_join(pca_out, meta)
+
+# Calculate percent explained per PC
+percentage <- round(pca_all$sdev^2 / sum(pca_all$sdev^2) * 100, 2)
+percentage <- paste(colnames(pca_out), "(", paste(
+  as.character(percentage), "%", ")", sep="") )
+
+# Get variables with biggest impact for PC1 and PC2
+pca_all$rotation[,1] %>% sort() %>% head(1)
+pca_all$rotation[,1] %>% sort(decreasing = TRUE) %>% head(1)
+pca_all$rotation[,2] %>% sort() %>% head(1)
+pca_all$rotation[,2] %>% sort(decreasing = TRUE) %>% head(1)
+
+# Get rownames for each protein
+which(rownames(pca_all$rotation) %in% 
+        c("tr|F6XL78|F6XL78_HORSE", "tr|A0A3Q2H9I4|A0A3Q2H9I4_HORSE",
+          "tr|F7BCM8|F7BCM8_HORSE", "tr|F7BND9|F7BND9_HORSE"))
+
+# Create matrix of x (PC1) coordinates and y (PC2) (duplicates removed)
+l.x <- cbind(pca_all$rotation[,1][c(9,24,28,32)]) * 100
+l.y <- cbind(pca_all$rotation[,2][c(9,24,28,32)]) * 100
+
+# Plot (leads to Figure 2A)
+horse_pca <- ggplot(data = pca_out, aes(x = PC1, y = PC2, color=method)) +
+  geom_point(size=6, stroke=1) +
+  xlab(percentage[1]) + 
+  ylab(percentage[2]) +
+  scale_color_manual(values=met.brewer(n=4, name="Cassatt2")) +
+  theme_minimal(base_size = 10) +
+  annotate("segment", x=0, xend=l.x, y=0, yend=l.y, colour="black", 
+           size=1, arrow=arrow()) + 
+  annotate("text", x=l.x, y=l.y, label=rownames(l.x), color="black")
+```
+
+## Identified MS2 spectra
+
+From MaxQuant run without dog proteome, also included in PRIDE submission.
+
+```{r}
+# Load summary file
+summary <- read_delim("/path_to_wd/summary.txt", 
+    delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+  janitor::clean_names() %>%
+  filter(!is.na(experiment)) %>%
+  filter(!experiment == "P0408") %>%
+  filter(!raw_file == "20230525_EXPL8_nLC11_GT_collab_77min_DDA_P0389")
+
+# Add metadata
+summary <- left_join(summary, meta, by=c("experiment"="stagetip")) %>%
+  filter(method %in% c("no_contamination", "no_cleaning"))
+
+# ANOVA
+aov_test <- aov(ms_ms_identified ~ method, data = summary)
+
+# Summary of the analysis
+summary(aov_test) 
+
+# Post-hoc test
+TukeyHSD(aov_test)
+
+# Homogeneity of variances
+plot(aov_test, 1)
+leveneTest(ms_ms_identified ~ method, data = summary) # all good
+
+# Normality
+plot(aov_test, 2)
+aov_residuals <- residuals(object = aov_test)
+shapiro.test(x = aov_residuals) # all good
+
+# Summarize
+mean_summary <- summary %>%
+  group_by(method) %>%
+  summarize(mean_id_percent_msms = mean(ms_ms_identified_percent),
+            sd_id_percent_msms = sd(ms_ms_identified_percent),
+            mean_msms = mean(ms_ms), sd_msms = sd(ms_ms),
+            mean_id_msms = mean(ms_ms_identified),
+            sd_id_msms = sd(ms_ms_identified))
+
+# Change labels
+mean_summary <- mean_summary %>%
+    mutate(method = gsub('original', 'Original', method)) %>%
+    mutate(method = gsub('bleach', 'Bleach', method)) %>%
+    mutate(method = gsub('edta', 'EDTA', method)) %>%
+    mutate(method = gsub('hcl', 'HCl', method)) %>%
+    mutate(method = gsub('uv', 'UV', method)) %>%
+    mutate(method = gsub('water', 'Water', method)) %>%
+    mutate(method = gsub('no_decont', 'No decont.', method))
+
+# Reorder for plotting
+mean_summary$method <- factor(mean_summary$method, 
+                          levels=c("Original", "Bleach", "EDTA","HCl",
+                                   "Water", "UV", "No decont."))
+
+# Figure for the number of MS2 spectra (not included in manuscript)
+ggplot(mean_summary, aes(x=method, y=mean_msms, fill=method)) +
+  geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin=mean_msms-sd_msms, ymax=mean_msms+sd_msms), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
+  xlab("Method") +
+  ylab("MS2 spectra") +
+  theme_bw()
+
+# Figure for the number of identified MS2 spectra (not included in manuscript)
+ggplot(mean_summary, aes(x=method, y=mean_identified_msms, fill=method)) +
+  geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin=mean_identified_msms-sd_identified_msms, ymax=mean_identified_msms+sd_identified_msms), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
+  xlab("Method") +
+  ylab("Identified MS2 spectra") +
+  theme_bw()
+
+# Figure for the percentage of identified MS2 spectra (not included in manuscript)
+ggplot(mean_summary, aes(x=method, y=mean_id_percent_msms, fill=method)) +
+  geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin=mean_id_percent_msms-sd_id_percent_msms, ymax=mean_id_percent_msms+sd_id_percent_msms), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
+  xlab("Method") +
+  ylab("Identified MS2 spectra %") +
+  theme_bw()
+
+# Figure for the identified peptides (not included in manuscript)
+ggplot(mean_summary, aes(x=method, y=mean_peptides, fill=method)) +
+  geom_bar(stat="identity") +
+  geom_errorbar(aes(ymin=mean_peptides-sd_peptides, ymax=mean_peptides+sd_peptides), 
+                width=0.2, position=position_dodge(0.9)) +
+  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
+  xlab("Method") +
+  ylab("Identified peptides") +
+  theme_bw()
+```

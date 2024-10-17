@@ -17,13 +17,13 @@ library(Peptides)
 library(tidyverse)
 ```
 
-The first part of the analysis is based on MaxQuant data output, which has been deposited to the ProteomeXchange Consortium via the PRIDE partner repository with the dataset identifier PXD050370. To run the code, you need to download the files from PRIDE, and change the paths in the code blocks to point to the data files.
+The first part of the analysis is based on MaxQuant data output, which has been deposited to the ProteomeXchange Consortium via the PRIDE partner repository with the dataset identifier PXD050370. To run the code, you need to download the files from PRIDE, and change the paths in the code blocks to point to the data files. Note that  the figures may have been manually edited for improved visuals after exporting.
 
 ## Protein count
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=4, fig.height=4}
 # Load text file with protein groups and clean 
-original <- read_delim("<PATH_TO>/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+original <- read_delim("/path_to_wd/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(!reverse %in% c("+")) %>%
   filter(!str_detect(protein_names, "Trypsin")) %>%
@@ -31,7 +31,7 @@ original <- read_delim("<PATH_TO>/proteinGroups.txt", delim = "\t", escape_doubl
   dplyr::select(protein_i_ds, protein_names, razor_unique_peptides_p0441_77min) %>%
   filter(razor_unique_peptides_p0441_77min > 1)
   
-bleach <- read_delim("<PATH_TO>/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+bleach <- read_delim("/path_to_wd/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(!reverse %in% c("+"))  %>%
   filter(!str_detect(protein_names, "Trypsin")) %>%
@@ -84,7 +84,7 @@ summary_fig <- ggplot(protein_summary, aes(x=sample, y=count, fill=tissue)) +
 
 ```{r}
 # Load dataset
-original <- read_delim("<PATH_TO>/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+original <- read_delim("/path_to_wd/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(!reverse %in% c("+")) %>%
   filter(!str_detect(protein_names, "Trypsin")) %>%
@@ -93,7 +93,7 @@ original <- read_delim("<PATH_TO>/evidence.txt", delim = "\t", escape_double = F
   filter(intensity > 0) %>%
   select(proteins, protein_names, experiment, intensity)
   
-bleach <- read_delim("<PATH_TO>/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+bleach <- read_delim("/path_to_wd/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(!reverse %in% c("+"))  %>%
   filter(!str_detect(protein_names, "Trypsin")) %>%
@@ -125,7 +125,7 @@ psm_count <- psm %>%
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load data
-original <- read_delim("<PATH_TO>/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+original <- read_delim("/path_to_wd/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(!reverse %in% c("+")) %>%
   filter(!experiment == "P0442_77min_Blank") %>%
@@ -210,7 +210,7 @@ Mackie, M., Rüther, P., Samodova, D., Di Gianvincenzo, F., Granzotto, C., Lyon,
 
 ```{r}
 # Load data
-deamidation <- read.csv("<PATH_TO>/deamidation_khudji_manuscript.txt", sep="") %>%
+deamidation <- read.csv("/path_to_wd/deamidation_khudji_manuscript.txt", sep="") %>%
   clean_names()
 
 # Edit sample names
@@ -241,7 +241,7 @@ deamidation_fig <- ggplot(deamidation, aes(x=raw_file, y=mean, fill=version)) +
 
 ```{r}
 # Load data
-original <- read_delim("<PATH_TO>/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+original <- read_delim("/path_to_wd/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(!reverse %in% c("+")) %>%
   filter(!experiment == "P0442_77min_Blank") %>%
@@ -336,7 +336,7 @@ This part is based on output files from PEAKS11, which can be found on the Prote
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load protein-level data
-spider_proteins <- read_delim("<PATH_TO>/spider.proteins.csv", 
+spider_proteins <- read_delim("/path_to_wd/spider.proteins.csv", 
     delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() 
 
@@ -355,7 +355,7 @@ Now we go through the extracts one by one, and reconstruct the sequences separat
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load peptide-level data
-peptide <- read_delim("<PATH_TO>/spider.protein-peptides.csv", delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
+peptide <- read_delim("/path_to_wd/spider.protein-peptides.csv", delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() 
 
 # Create vector of proteins
@@ -453,5 +453,5 @@ writeFasta<-function(data, filename){
   close(fileConn)
 }
 
-writeFasta(new_fasta, "<PATH_TO>/output.fasta")
+writeFasta(new_fasta, "/path_to_wd/output.fasta")
 ```
