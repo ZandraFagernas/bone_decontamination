@@ -17,7 +17,7 @@ library(Peptides)
 library(tidyverse)
 ```
 
-The first part of the analysis is based on MaxQuant data output, which has been deposited to the ProteomeXchange Consortium via the PRIDE partner repository with the dataset identifier PXD050370. To run the code, you need to download the files from PRIDE, and move the folders into the same folder as you have saved this script. There are two different folders, one for the bleached sample and one for the original sample. Note that the figures may have been manually edited for improved visuals after exporting.
+The first part of the analysis is based on MaxQuant data output, which has been deposited to the ProteomeXchange Consortium via the PRIDE partner repository with the dataset identifier PXD050370. To run the code, you need to download the files from PRIDE, unzip them, and move the folders into the same folder as you have saved this script. There are two different folders, one for the bleached sample and one for the original sample. Note that the figures may have been manually edited for improved visuals after exporting.
 
 ## Protein count
 
