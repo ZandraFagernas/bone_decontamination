@@ -23,6 +23,8 @@ PXD050370
 - bleach_PEAKS/bleach_fdr1: spider.proteins.csv and spider.protein-peptides.csv
 - original_PEAKS/original_fdr1: spider.proteins.csv and spider.protein-peptides.csv
 
+Once downloaded, ensure that these files are kept in separate folders, keeping the same folder structure and naming as they have on PRIDE. This is necessary as all MaxQuant/PEAKS output files have the same names by default, and will help you smoothly run the code without needing to edit and rename everything. Place all these folder in the same place as you have saved the Rmd files and the data-folder.
+
 **Software**
 
 The code was built using R v.4.3.0 (R Core Team, 2023).
