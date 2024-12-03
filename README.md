@@ -3,8 +3,8 @@ Here you can find R Notebooks used for the manuscript "Cleaning the Dead: Optimi
 **Code and data  files**
 
 You will find two Rmd files in this repository:
- - bone_decontamination_cleaned_v4.Rmd contains all code for the decontamination method comparison, section 3.1 in the manuscript.
- - khudji_decontamination_cleaned_v3.Rmd contains all the code for the analysis of the Khudji dentine proteome, section 3.2 in the manuscript.
+ - bone_decontamination_cleaned_v5.Rmd contains all code for the decontamination method comparison, section 3.1 in the manuscript.
+ - khudji_decontamination_cleaned_v5.Rmd contains all the code for the analysis of the Khudji dentine proteome, section 3.2 in the manuscript.
 
 You can also here find the following files in the data-folder:
 - identified_contaminants.txt which outlines which contaminants are present and what they are.
