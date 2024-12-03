@@ -50,6 +50,7 @@ To produce the files that are analysed here, the following software/code was use
 - deamidation.py (Mackie et al., 2018)
 
 **References:**
+
 Bates, D., Maechler, M., Bolker, B., & Walker, S. (2015). Fitting Linear Mixed-Effects Models Using lme4. Journal of Statistical Software, 67(1), 1-48.
 
 Cox, J., & Mann, M. (2008). MaxQuant enables high peptide identification rates, individualized p.p.b.-range mass accuracies and proteome-wide protein quantification. Nature Biotechnology, 26(12), 1367–1372.
