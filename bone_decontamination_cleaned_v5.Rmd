@@ -317,7 +317,7 @@ lt <- read_delim("equus_canis_maxquant/proteinGroups.txt", delim = "\t", escape_
 # Add metadata
 lt$stagetip <- toupper(lt$stagetip)
 lt <- left_join(lt, meta) %>%
-  filter(!sample == "blank")
+  filter(!replicate == "blank")
 
 # Summarize
 lt_summary <- lt %>%
@@ -349,7 +349,7 @@ lacto_peptides <- ggplot(lt_summary, aes(x=method, y=mean_peptides)) +
   theme_bw()
 
 # Sequence coverage
-lt <- read_delim("proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+lt <- read_delim("equus_canis_maxquant/proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
   filter(str_detect(fasta_headers, "Lactotransferrin")) %>%
   select(starts_with("sequence_coverage_")) %>%
@@ -361,7 +361,7 @@ lt <- read_delim("proteinGroups.txt", delim = "\t", escape_double = FALSE, trim_
 # Add metadata
 lt$stagetip <- toupper(lt$stagetip)
 lt <- left_join(lt, meta) %>%
-  filter(!sample == "blank")
+  filter(!replicate == "blank")
 
 # Summarize
 lt_summary <- lt %>%
@@ -429,11 +429,11 @@ coverage_summary <- peptide %>%
 # Add metadata, remove blank
 coverage_summary$stagetip <- toupper(coverage_summary$stagetip)
 coverage_summary <- left_join(coverage_summary, meta) %>%
-  filter(!sample == "blank")
+  filter(!replicate == "blank")
 
 ## Count number of covered amino acids
 coverage_count <- coverage_summary %>%
-  group_by(method, sample) %>%
+  group_by(method, replicate) %>%
   summarize(covered_aa = n())
 
 # Summarize even more
@@ -1056,7 +1056,7 @@ meta <- meta %>%
   filter(weight_mg > 0) %>%
   mutate(scale = max(weight_mg)/weight_mg)
 intensity <- left_join(intensity, meta, by=c("experiment"="stagetip")) %>%
-  filter(!sample == "blank")
+  filter(!replicate == "blank")
 
 # Normalize by weight
 intensity$int_scaled <- intensity$total_intensity * intensity$scale
@@ -1231,7 +1231,7 @@ horse_summary <- horse %>%
   summarize(mean_protein = mean(protein_count), sd_protein = sd(protein_count))
 
 # Same for PSMs
-psms <- read_delim("/path_to_wd/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
+psms <- read_delim("equus_only_maxquant/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names()  %>% 
   filter(!reverse %in% c("+")) %>%
   filter(!str_detect(proteins, "CON_")) %>%
@@ -1380,33 +1380,23 @@ mean_summary <- summary %>%
 
 # Change labels
 mean_summary <- mean_summary %>%
-    mutate(method = gsub('original', 'Original', method)) %>%
-    mutate(method = gsub('bleach', 'Bleach', method)) %>%
-    mutate(method = gsub('edta', 'EDTA', method)) %>%
-    mutate(method = gsub('hcl', 'HCl', method)) %>%
-    mutate(method = gsub('uv', 'UV', method)) %>%
-    mutate(method = gsub('water', 'Water', method)) %>%
-    mutate(method = gsub('no_decont', 'No decont.', method))
-
-# Reorder for plotting
-mean_summary$method <- factor(mean_summary$method, 
-                          levels=c("Original", "Bleach", "EDTA","HCl",
-                                   "Water", "UV", "No decont."))
+    mutate(method = gsub('no_contamination', 'Original', method)) %>%
+    mutate(method = gsub('no_cleaning', 'No decont.', method))
 
 # Figure for the number of MS2 spectra (not included in manuscript)
 ggplot(mean_summary, aes(x=method, y=mean_msms, fill=method)) +
   geom_bar(stat="identity") +
   geom_errorbar(aes(ymin=mean_msms-sd_msms, ymax=mean_msms+sd_msms), 
                 width=0.2, position=position_dodge(0.9)) +
-  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
+  scale_fill_manual(values=met.brewer("Cassatt2", 8), guide="none") +
   xlab("Method") +
   ylab("MS2 spectra") +
   theme_bw()
 
 # Figure for the number of identified MS2 spectra (not included in manuscript)
-ggplot(mean_summary, aes(x=method, y=mean_identified_msms, fill=method)) +
+ggplot(mean_summary, aes(x=method, y=mean_msms, fill=method)) +
   geom_bar(stat="identity") +
-  geom_errorbar(aes(ymin=mean_identified_msms-sd_identified_msms, ymax=mean_identified_msms+sd_identified_msms), 
+  geom_errorbar(aes(ymin=mean_msms-sd_msms, ymax=mean_msms+sd_msms), 
                 width=0.2, position=position_dodge(0.9)) +
   scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
   xlab("Method") +
@@ -1418,18 +1408,8 @@ ggplot(mean_summary, aes(x=method, y=mean_id_percent_msms, fill=method)) +
   geom_bar(stat="identity") +
   geom_errorbar(aes(ymin=mean_id_percent_msms-sd_id_percent_msms, ymax=mean_id_percent_msms+sd_id_percent_msms), 
                 width=0.2, position=position_dodge(0.9)) +
-  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
+  scale_fill_manual(values=met.brewer("Cassatt2", 8), guide="none") +
   xlab("Method") +
   ylab("Identified MS2 spectra %") +
-  theme_bw()
-
-# Figure for the identified peptides (not included in manuscript)
-ggplot(mean_summary, aes(x=method, y=mean_peptides, fill=method)) +
-  geom_bar(stat="identity") +
-  geom_errorbar(aes(ymin=mean_peptides-sd_peptides, ymax=mean_peptides+sd_peptides), 
-                width=0.2, position=position_dodge(0.9)) +
-  scale_fill_manual(values=met.brewer("Hiroshige", 8), guide="none") +
-  xlab("Method") +
-  ylab("Identified peptides") +
   theme_bw()
 ```

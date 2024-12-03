@@ -21,6 +21,8 @@ library(tidyverse)
 
 The first part of the analysis is based on MaxQuant data output, which has been deposited to the ProteomeXchange Consortium via the PRIDE partner repository with the dataset identifier PXD050370. To run the code, you need to download the files from PRIDE, unzip them, and move the folders into the same folder as you have saved this script. There are two different folders, one for the bleached sample and one for the original sample. Note that the figures may have been manually edited for improved visuals after exporting.
 
+Please note that during the MaxQuant run, the bleached sample was labelled as "Blank" due to the raw file name containing the word "blank" by accident. It is, however, not the blank. See the metadata file if you are unsure.
+
 ## Protein count
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.width=4, fig.height=4}
@@ -167,7 +169,7 @@ length_summary <- length %>%
   dplyr::summarize(total_intensity = sum(intensity))
 
 # Plot barcharts (creates Figure S3A)
-length_plot <- ggplot(length, aes(x=length, y=total_intensity, fill=experiment)) + 
+length_plot <- ggplot(length_summary, aes(x=length, y=total_intensity, fill=experiment)) + 
   geom_bar(stat="identity") +
   facet_wrap(~experiment, ncol=1) +
   scale_fill_manual(values=met.brewer("Cassatt2", 4), name="Proteome") +
