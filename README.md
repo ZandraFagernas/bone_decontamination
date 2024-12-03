@@ -10,7 +10,7 @@ You can also here find the following files in the data-folder:
 - identified_contaminants.txt which outlines which contaminants are present and what they are.
 - supplementary_data_1.txt which is a metadata file for all samples in the project
 
-Supplementary materials in the manuscript contain metadata (Supplementary Data 1). All raw data and MaxQuant search results have been deposited to the ProteomeXchange Consortium via the PRIDE  partner repository with the dataset identifier PXD050393 (Equus sp.), and PXD050370 and 10.6019/PXD050370 (Homo sp.). These datasets will be made public upon publication of the manuscript. Specifically, the following ones are needed to run the code and produce the results and figures in the manuscript:
+All raw data and MaxQuant search results have been deposited to the ProteomeXchange Consortium via the PRIDE  partner repository with the dataset identifier PXD050393 (Equus sp.), and PXD050370 and 10.6019/PXD050370 (Homo sp.). These datasets will be made public upon publication of the manuscript. Specifically, the following ones are needed to run the code and produce the results and figures in the manuscript:
 
 PXD050393
 - equus_canis_maxquant: proteinGroups.txt, evidence.txt and peptides.txt
