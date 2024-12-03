@@ -6,10 +6,22 @@ You will find two Rmd files in this repository:
  - bone_decontamination_cleaned_v4.Rmd contains all code for the decontamination method comparison, section 3.1 in the manuscript.
  - khudji_decontamination_cleaned_v3.Rmd contains all the code for the analysis of the Khudji dentine proteome, section 3.2 in the manuscript.
 
-You can also here find the following file:
+You can also here find the following files in the data-folder:
 - identified_contaminants.txt which outlines which contaminants are present and what they are.
+- supplementary_data_1.txt which is a metadata file for all samples in the project
 
-Supplementary materials in the manuscript contain metadata (Supplementary Data 1). All raw data and MaxQuant search results have been deposited to the ProteomeXchange Consortium via the PRIDE  partner repository with the dataset identifier PXD050393 (Equus sp.), and PXD050370 and 10.6019/PXD050370 (Homo sp.). These datasets will be made public upon publication of the manuscript. 
+Supplementary materials in the manuscript contain metadata (Supplementary Data 1). All raw data and MaxQuant search results have been deposited to the ProteomeXchange Consortium via the PRIDE  partner repository with the dataset identifier PXD050393 (Equus sp.), and PXD050370 and 10.6019/PXD050370 (Homo sp.). These datasets will be made public upon publication of the manuscript. Specifically, the following ones are needed to run the code and produce the results and figures in the manuscript:
+
+PXD050393
+- equus_canis_maxquant: proteinGroups.txt, evidence.txt and peptides.txt
+- equus_uv_maxquant: evidence.txt
+- equus_only_maxquant: proteinGroups.txt and summary.txt
+
+PXD050370
+- khudji_original: proteinGroups.txt and evidence.txt
+- khudji_bleach: proteinGroups.txt and evidence.txt
+- bleach_PEAKS/bleach_fdr1: spider.proteins.csv and spider.protein-peptides.csv
+- original_PEAKS/original_fdr1: spider.proteins.csv and spider.protein-peptides.csv
 
 **Software**
 
@@ -27,6 +39,8 @@ The following R packages are required to execute the code:
 - Hmisc v.5.1.1 (Harrell, 2023)
 - MASS v.7.3.58.4 (Venables & Ripley, 2002)
 - MetBrewer v.0.2.0 (Mills, 2022)
+- lme4 v.1.1.33 (Bates et al. 2015)
+- lmerTest v.3.1.3 (Kuznetsova et al. 2017)
 
 To produce the files that are analysed here, the following software/code was used:
 - MaxQuant v.2.1.3.0 (Cox & Mann, 2008)
@@ -34,6 +48,7 @@ To produce the files that are analysed here, the following software/code was use
 - deamidation.py (Mackie et al., 2018)
 
 **References:**
+Bates, D., Maechler, M., Bolker, B., & Walker, S. (2015). Fitting Linear Mixed-Effects Models Using lme4. Journal of Statistical Software, 67(1), 1-48.
 
 Cox, J., & Mann, M. (2008). MaxQuant enables high peptide identification rates, individualized p.p.b.-range mass accuracies and proteome-wide protein quantification. Nature Biotechnology, 26(12), 1367–1372.
 
@@ -44,6 +59,8 @@ Fox, J., & Weisberg, S. (2019). An R Companion to Applied Regression, Third Edit
 Harrell, F. E., Jr. (2023). Hmisc: Harrell Miscellaneous. 
 
 Kassambara, A. (2023). ggpubr: “ggplot2” Based Publication Ready Plots. 
+
+Kuznetsova, A., Brockhoff, P.B., & Christensen R.H.B. (2017). “lmerTest Package: Tests in Linear Mixed Effects Models.” _Journal of Statistical Software_, *82*(13), 1-26.
 
 Mackie, M., Rüther, P., Samodova, D., Di Gianvincenzo, F., Granzotto, C., Lyon, D., Peggie, D. A., Howard, H., Harrison, L., Jensen, L. J., Olsen, J. V., & Cappellini, E. (2018). Palaeoproteomic Profiling of Conservation Layers on a 14th Century Italian Wall Painting. Angewandte Chemie, 57(25), 7369–7374.
 
