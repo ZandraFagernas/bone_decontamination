@@ -346,7 +346,7 @@ The reconstruction is done twice, once for each extraction method, which is then
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load protein-level data
-spider_proteins <- read_delim("bleach_PEAKS/bleach_fdr1/spider.proteins.csv", 
+spider_proteins <- read_delim("bleach_fdr1/spider.proteins.csv", 
     delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() 
 
@@ -365,7 +365,7 @@ Now we go through the extracts one by one, and reconstruct the sequences separat
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load peptide-level data
-peptide <- read_delim("bleach_PEAKS/bleach_fdr1/spider.protein-peptides.csv", delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
+peptide <- read_delim("bleach_fdr1/spider.protein-peptides.csv", delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() 
 
 # Create vector of proteins
@@ -469,7 +469,7 @@ writeFasta(new_fasta, "output_bleach.fasta")
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load protein-level data
-spider_proteins <- read_delim("original_PEAKS/original_fdr1/spider.proteins.csv", 
+spider_proteins <- read_delim("original_fdr1/spider.proteins.csv", 
     delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() 
 
@@ -488,7 +488,7 @@ Now we go through the extracts one by one, and reconstruct the sequences separat
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE}
 # Load peptide-level data
-peptide <- read_delim("original_PEAKS/original_fdr1/spider.protein-peptides.csv", delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
+peptide <- read_delim("original_fdr1/spider.protein-peptides.csv", delim = ",", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() 
 
 # Create vector of proteins
