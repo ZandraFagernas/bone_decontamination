@@ -104,7 +104,7 @@ bleach <- read_delim("khudji_bleach/evidence.txt", delim = "\t", escape_double =
   filter(!str_detect(proteins, "CON__P00761")) %>%
   filter(experiment == "Blank") %>%
   filter(intensity > 0) %>%
-  select(proteins, protein_names, experiment, intensity)
+  dplyr::select(proteins, protein_names, experiment, intensity)
 
 # Combine files
 psm <- full_join(original, bleach)
