@@ -54,7 +54,7 @@ protein <- protein %>%
   mutate(other = str_detect(protein_names, "Alpha-amylase|Ig |Ubiquitin|Lysozyme| C1q|Scavenger")) %>%
   mutate(tissue = if_else(skin == TRUE, "skin", 
                           if_else(bone == TRUE, "bone", "other"))) %>%
-  select(-skin, -bone, -other)
+  dplyr::select(-skin, -bone, -other)
 
 # Long form
 protein <- protein %>%
@@ -95,7 +95,7 @@ original <- read_delim("khudji_original/evidence.txt", delim = "\t", escape_doub
   filter(!str_detect(proteins, "CON__P00761")) %>%
   filter(experiment == "P0441_77min") %>%
   filter(intensity > 0) %>%
-  select(proteins, protein_names, experiment, intensity)
+  dplyr::select(proteins, protein_names, experiment, intensity)
   
 bleach <- read_delim("khudji_bleach/evidence.txt", delim = "\t", escape_double = FALSE, trim_ws = TRUE) %>%
   clean_names() %>%
@@ -117,7 +117,7 @@ psm <- psm %>%
   mutate(other = str_detect(protein_names, "Alpha-amylase|Ig |Ubiquitin|Lysozyme| C1q|Scavenger")) %>%
   mutate(tissue = if_else(skin == TRUE, "skin", 
                           if_else(bone == TRUE, "bone", "other"))) %>%
-  select(-skin, -bone, -other)
+  dplyr::select(-skin, -bone, -other)
 
 # PSM count
 psm_count <- psm %>%
